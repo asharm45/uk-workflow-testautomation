@@ -1,0 +1,9 @@
+﻿################################################################################
+# This .gitignore file was automatically created by Microsoft(R) Visual Studio.
+################################################################################
+
+/.vs/Workflow
+/.vs/uk-workflow-testautomation/v17
+/.vs/ProjectEvaluation
+/.vs
+/WorkflowSpecflowTests/Features/Work141,Work28,Work127,Work176_DynamicsCase.feature

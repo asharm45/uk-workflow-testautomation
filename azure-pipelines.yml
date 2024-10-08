@@ -1,0 +1,124 @@
+pool:  
+  name: ado-core-agents-uk-devtest-hpc
+
+parameters:
+- name: testCategory
+  displayName: Test Category
+  type: string
+  default: BulkCaseworker
+  values:
+  - smoke1
+  - smoke
+  - sanity
+  - regression
+  - functional
+  - BulkCaseworker
+
+variables:
+  buildConfiguration: 'Release'
+
+steps:
+- task: UseDotNet@2
+  inputs:
+    packageType: 'sdk'
+    version: '6.0.x'
+  displayName: 'Use .NET SDK'
+- script: dotnet build --configuration Release
+  displayName: 'Build'
+
+
+- script: dotnet restore
+  displayName: 'Restore NuGet packages'
+
+- task: DotNetCoreCLI@2
+  inputs:
+    command: 'build'
+    projects: '**/*.csproj'
+
+
+
+- task: DotNetCoreCLI@2
+  inputs:
+    command: 'publish'
+    publishWebProjects: false
+    projects: '**/*.csproj'
+    zipAfterPublish: false
+    modifyOutputPath: false
+
+- task: PublishBuildArtifacts@1
+  condition: succeededOrFailed()
+  inputs:
+    PathtoPublish: '$(Build.ArtifactStagingDirectory)'
+    ArtifactName: 'drop'
+    publishLocation: 'Container'
+
+- task: UseDotNet@2
+  inputs:
+    packageType: 'sdk'
+    version: '6.0.x'
+- script: pwsh $(BUILD.SOURCESDIRECTORY)/WorkflowSpecflowTests/bin/Debug/net6.0/playwright.ps1 install
+  displayName: 'Install Playwright browsers'
+- script: |
+    echo "Running tests for category: ${{ parameters.testCategory }}"
+    dotnet test --filter "Category=${{ parameters.testCategory }}" --logger "console;verbosity=detailed"
+  displayName: Run Tests
+  env:
+    CLI: true
+  timeoutInMinutes: 360
+
+- task: CopyFiles@2
+  condition: succeededOrFailed()
+  inputs:
+    SourceFolder: '$(BUILD.SOURCESDIRECTORY)/WorkflowSpecflowTests/bin/Debug/net6.0'
+    Contents: |
+      **/*.webm
+      **/*_trace.zip
+      **/*.png
+      **/*Report.html
+    TargetFolder: '$(Build.ArtifactStagingDirectory)'
+    CleanTargetFolder: true
+    preserveTimestamp: true
+
+- task: PublishBuildArtifacts@1
+  condition: succeededOrFailed()
+  inputs:
+    PathtoPublish: '$(Build.ArtifactStagingDirectory)'
+    ArtifactName: 'Test Results'
+    publishLocation: 'Container'
+
+- task: PowerShell@2
+  condition: succeededOrFailed()
+  inputs:
+    targetType: 'inline'
+    script: |
+    
+      # Define email parameters
+      $smtpServer = 'relay.hiscox.com'
+      $smtpFrom = 'Svc_HiscoxUKWorkflowAuto3@hiscox.com'
+ 
+      # Define multiple recipients
+      $smtpTo = 'amitsharma.jaiprakash@hiscox.com,sumit.chowdhury2@hiscox.com,sanjay.jayakumar@hiscox.com,jeevanathan.chandran@hiscox.com'
+ 
+      $messageSubject = 'Automated Test Report'
+      $messageBody = 'Please find the attached test report.'
+      # Define the test report path
+      $reportPath = '$(BUILD.SOURCESDIRECTORY)/WorkflowSpecflowTests/bin/Debug/net6.0/TestReport.html'
+ 
+      # Create email message
+      $message = New-Object system.net.mail.mailmessage
+      $message.from = $smtpFrom
+      
+      # Add multiple recipients
+      $smtpTo.Split(',') | ForEach-Object {
+        $message.To.Add($_.Trim())
+      }
+ 
+      $message.Subject = $messageSubject
+      $message.Body = $messageBody
+      $attachment = New-Object Net.Mail.Attachment($reportPath)
+      $message.Attachments.Add($attachment)
+ 
+      # Send the email
+      $smtp = New-Object Net.Mail.SmtpClient($smtpServer)
+      $smtp.Send($message)
+  displayName: 'Share report'
